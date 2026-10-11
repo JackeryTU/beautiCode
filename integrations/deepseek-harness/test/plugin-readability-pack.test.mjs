@@ -39,7 +39,9 @@ test("Web, native Desktop and both packed runtimes serve the same current readab
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const standalone = path.join(root, "standalone"), aggregate = path.join(root, "aggregate");
   await stageDshPlugin(standalone, { build: false, publishName: "beauticode-dsh" });
-  await stageDesktopAggregate(aggregate, { build: false });
+  // CI runs workspace tests before the full build; the aggregate owns building
+  // its other host runtimes instead of relying on a prebuilt local checkout.
+  await stageDesktopAggregate(aggregate);
   const source = path.resolve(import.meta.dirname, "..");
   const readable = await fs.readFile(path.join(source, "readability.js"), "utf8");
   const client = await fs.readFile(path.join(source, "client.js"), "utf8");
