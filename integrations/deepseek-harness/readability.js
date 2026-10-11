@@ -45,7 +45,21 @@ html[data-bc-active="true"]:not([data-bc-readable-surfaces="false"]) :is(
      frame instead would produce a solid bar across its side padding. */
   [data-question-key] > section,
   [data-plan-review-key] > section,
-  [data-approval-key] > div
+  [data-approval-key] > div,
+  /* The standalone plugin page has separate reading regions. Keep its frame
+     transparent so wallpaper remains visible between groups. Empty/offline
+     states are direct paragraphs; failures wrap an alert and retry control. */
+  [data-plugin-panel] > header,
+  [data-plugin-panel] [data-plugin-group],
+  [data-plugin-panel] [data-plugin-detail],
+  [data-plugin-panel] [data-plugin-item-detail],
+  [data-plugin-panel] [data-plugin-row-detail],
+  [data-plugin-panel] [data-plugin-config],
+  [data-plugin-panel] [data-plugin-loading],
+  [data-plugin-panel] > p,
+  [data-plugin-panel] > div:has(> [role="alert"]),
+  [data-plugin-panel] [data-plugin-package],
+  [data-plugin-panel] [data-plugin-item]
 ){
   --dsw-alias-bg-base:var(--bc-readable-fill);
   --dsw-alias-bg-layer-1:var(--bc-readable-fill);
@@ -56,6 +70,17 @@ html[data-bc-active="true"]:not([data-bc-readable-surfaces="false"]) :is(
   --dsw-specific-menu:var(--bc-readable-fill);
   --dsw-alias-tooltip-bg:var(--bc-readable-fill);
   background-color:var(--bc-readable-fill);
+}
+/* Keep host geometry and radii: groups have no padding, so adding a radius
+   would expose wallpaper behind the first letter of their heading. */
+html[data-bc-active="true"]:not([data-bc-readable-surfaces="false"]) [data-plugin-panel]{
+  --dsw-alias-label-tertiary:var(--dsw-alias-label-secondary);
+  --dsw-alias-label-caption:var(--dsw-alias-label-secondary);
+}
+/* Preserve the host's translucent hover feedback over an opaque base. Using
+   an image layer leaves the reading plate opaque even in gallery/video mode. */
+html[data-bc-active="true"]:not([data-bc-readable-surfaces="false"]) [data-plugin-panel] :is([data-plugin-package],[data-plugin-item]):hover{
+  background-image:linear-gradient(var(--dsw-alias-interactive-bg-hover),var(--dsw-alias-interactive-bg-hover));
 }
 `;
   document.head.append(style);
