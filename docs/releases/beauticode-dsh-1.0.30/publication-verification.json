@@ -1,0 +1,20 @@
+{
+  "ok": true,
+  "package": "beauticode-dsh",
+  "version": "1.0.30",
+  "latest": "1.0.30",
+  "publishedOnly": [
+    "beauticode-dsh"
+  ],
+  "remoteTarballMatchesTestedTarball": true,
+  "byteIdenticalFiles": 49,
+  "shasum": "4dbf7737f04c8efa75043ff4c17049850f7e9616",
+  "integrity": "sha512-M3t+W8ob/5SBZc5+00sVx7wgFURSxgKI1eTiesLJJIh6mZrvHCWed37HYzTVNz6AEIx0QKWNPBRmsQ9jTXJAcQ==",
+  "sha256": "eb1ede2705fecd61f429cd6c0563fdf9edbee764d4a90a09ce0c78a0c48a5611",
+  "tests": {
+    "passed": 16,
+    "failed": 0,
+    "skipped": 0
+  },
+  "desktopAggregatePublished": false
+}
