@@ -41,6 +41,16 @@
 - 单元测试新增一例，断言三条子元素选择器存在、且不会命中外层 frame。
 - 现场验收：官方 DSH Desktop，背景启用（画窗、0% 阴影）下打开提问窗口，卡片底色与会话输入框一致，正文不再透出；关闭「功能面板不透明」后立即恢复半透明，重新开启后再次遮挡。
 
+### 补充：独立插件页（#92，2026-10-11）
+
+Web 与官方 Desktop 的插件页共用 `readability.js`。以 `data-plugin-panel` 为边界，为直接页头、`data-plugin-group` 分组、`data-plugin-detail` / `data-plugin-item-detail` / `data-plugin-row-detail` 详情和 `data-plugin-config` 配置区域铺独立底板；`data-plugin-loading`、直接空状态段落及包含直接 alert 的错误／重试容器同样受保护。页面外框仍透明，保留分组间隙和外围壁纸。结构依据官方 Desktop 0.2.0-rc.2 的 ui-plugin-manager；宿主改变这些语义属性或状态根结构时须更新适配与 fixture，不使用 hash 类名兜底。
+
+底板沿用 `--bc-readable-fill` 的宿主深色静态色／白色，alpha 为 1；局部表面 token 防止画窗规则覆盖。卡片使用同色底板覆盖负边距突出部分，并用宿主 hover token 作渐变叠层，保留 hover 反馈和焦点轮廓。沿用宿主圆角，不改变尺寸、间距、命中区域、拖动属性或滚动。只在启用背景且开启保护时，将页内 tertiary / caption 标签 token 提升为 secondary；主文字配色保持宿主值。官方主题下普通文字验收目标为 4.5:1。
+
+不新增依赖、材质配置、采样或 DOM 观察器；CSS 自动覆盖异步新挂载内容。原默认值、显式关闭选择、存储格式、跨窗口同步、注入协议及鉴权保持原契约。关闭保护或清除背景即撤销这些样式，版本回滚恢复旧插件包。
+
+`plugin-readability.browser.test.mjs` 用真实语义结构和主题色板覆盖深浅主题、会话阶段、画窗、阴影／磨砂，验证局部不透明、文字对比度、异步状态、关闭／清除恢复、负边距、hover、键盘焦点及控制区域。`plugin-readability-pack.test.mjs` 验证 Web 与 native Desktop 鉴权路径均提供当前共享脚本，并比较独立包和桌面聚合包的 DSH runtime。浏览器 fixture 不替代真实 Web 和官方 Desktop 候选包验收；结果与截图见 [#92 验收记录](../verification/issue-92-plugin-readability.md)。
+
 ## 回滚
 
 用户关闭开关即可回到原有透明效果。版本回滚可移除脚本的拼接、打包项与控制台入口；独立偏好不会影响旧版背景客户端。不会改写 DSH 安装文件或原有背景状态。
