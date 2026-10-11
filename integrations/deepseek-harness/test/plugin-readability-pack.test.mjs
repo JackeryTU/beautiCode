@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
@@ -6,7 +7,6 @@ import path from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 import { stageDshPlugin } from "../../../scripts/pack-dsh-plugin.mjs";
-import { stageDesktopAggregate } from "../../../scripts/pack-desktop-aggregate.mjs";
 
 // Exercise the exported Cordis entry and its HTTP endpoint, including the
 // native Desktop header fence. A source-text match alone misses stale packs.
@@ -39,9 +39,15 @@ test("Web, native Desktop and both packed runtimes serve the same current readab
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const standalone = path.join(root, "standalone"), aggregate = path.join(root, "aggregate");
   await stageDshPlugin(standalone, { build: false, publishName: "beauticode-dsh" });
-  // CI runs workspace tests before the full build; the aggregate owns building
-  // its other host runtimes instead of relying on a prebuilt local checkout.
-  await stageDesktopAggregate(aggregate);
+  // CI tests precede the full build. Build through the real aggregate API in
+  // an isolated process; inherited test IPC/output must not reach its children.
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+  const packer = new URL("../../../scripts/pack-desktop-aggregate.mjs", import.meta.url).href;
+  const staged = spawnSync(process.execPath, ["--input-type=module", "--eval",
+    `const { stageDesktopAggregate } = await import(${JSON.stringify(packer)}); await stageDesktopAggregate(process.argv[1]);`, aggregate],
+  { env, encoding: "utf8" });
+  assert.equal(staged.status, 0, staged.error?.message || `${staged.stdout}\n${staged.stderr}`);
   const source = path.resolve(import.meta.dirname, "..");
   const readable = await fs.readFile(path.join(source, "readability.js"), "utf8");
   const client = await fs.readFile(path.join(source, "client.js"), "utf8");
