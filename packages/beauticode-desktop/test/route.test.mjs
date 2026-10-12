@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import path from "node:path";
+import os from "node:os";
 import test from "node:test";
 import { HOSTS, parseCommand, resolveRoute, runHostCommand } from "../src/index.mjs";
 
@@ -10,12 +11,13 @@ test("per-host health commands are read-only", () => {
 });
 
 test("each host resolves install and uninstall to a package-local script", () => {
+  const runtimeRoot = path.resolve(os.tmpdir(), "bc-package", "runtime");
   for (const host of HOSTS) {
     for (const command of ["install", "uninstall"]) {
-      const route = resolveRoute(host, command, { runtimeRoot: "C:/package/runtime" });
+      const route = resolveRoute(host, command, { runtimeRoot });
       assert.equal(route.host, host);
       assert.equal(route.command, command);
-      assert.equal(route.script.replaceAll("\\", "/").startsWith("C:/package/runtime/"), true);
+      assert.equal(route.script.startsWith(runtimeRoot + path.sep), true);
       assert.equal(route.script.includes("desktop"), host === "cursor" || host === "doubao");
       assert.ok(Array.isArray(route.args));
       assert.equal(path.isAbsolute(route.script), true);
