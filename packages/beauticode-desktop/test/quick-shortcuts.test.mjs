@@ -56,3 +56,49 @@ test('shortcut process errors report the actual failure code instead of CLIXML p
     spawnSync: () => ({ status: null, error: Object.assign(new Error('capture failed'), { code: 'ENOBUFS' }), stderr: '#< CLIXML progress' }),
   }), (error) => error.code === 'ENOBUFS' && error.message.includes('ENOBUFS') && !error.message.includes('CLIXML'));
 });
+
+test('shortcut nonzero exits retain bounded diagnostics without local paths or URLs', { skip: process.platform !== 'win32' }, (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'beauticode-shortcut-detail-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const launcher = path.join(root, 'launcher.ps1');
+  fs.writeFileSync(launcher, 'exit 0\n');
+  assert.throws(() => installHostQuickShortcut('cursor', {
+    launcher, programsDir: path.join(root, 'Programs'),
+    spawnSync: () => ({ status: 1, stderr: `COM Save permission denied: '${launcher}' https://example.test/?token=secret ` + 'x'.repeat(4000) }),
+  }), (error) => error.message.includes('COM Save permission denied') && error.message.length < 600 &&
+    !error.message.includes(root) && !error.message.includes('token=secret'));
+});
+
+test('shortcut publication preserves its Unicode name when native COM accepts only ASCII filenames', { skip: process.platform !== 'win32' }, (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'beauticode-shortcut-unicode-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const launcher = path.join(root, 'launcher.ps1');
+  fs.writeFileSync(launcher, 'exit 0\n');
+  const programsDir = path.join(root, 'Programs');
+  const nativeFixture = `
+function New-Object {
+  param([string]$ComObject)
+  if ($ComObject -ne 'WScript.Shell') { throw 'unexpected COM fixture' }
+  $shell = [pscustomobject]@{}
+  $shell | Add-Member -MemberType ScriptMethod -Name CreateShortcut -Value {
+    param($file)
+    $link = [pscustomobject]@{ FullName=$file; TargetPath=''; Arguments=''; WorkingDirectory=''; WindowStyle=1; Description='' }
+    $link | Add-Member -MemberType ScriptMethod -Name Save -Value {
+      if ($this.FullName -match '[^\\x00-\\x7f]') { throw 'native-unicode-save-failed' }
+      [System.IO.File]::WriteAllText($this.FullName, 'fixture shortcut')
+    }
+    return $link
+  }
+  return $shell
+}
+`;
+  const result = installHostQuickShortcut('cursor', {
+    launcher, programsDir,
+    spawnSync(program, args, options) {
+      const script = Buffer.from(args.at(-1), 'base64').toString('utf16le');
+      return spawnSync(program, [...args.slice(0, -1), Buffer.from(nativeFixture + script, 'utf16le').toString('base64')], options);
+    },
+  });
+  assert.equal(result.outcome, 'created');
+  assert.deepEqual(fs.readdirSync(programsDir), ['beautiCode Cursor (背景).lnk']);
+});

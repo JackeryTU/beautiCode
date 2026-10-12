@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 const NAMES = Object.freeze({ codex: 'Codex', workbuddy: 'WorkBuddy', cursor: 'Cursor', doubao: 'Doubao' });
 
@@ -27,29 +28,43 @@ export function installHostQuickShortcut(host, options = {}) {
   const programsDir = options.programsDir || path.join(appData, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'beautiCode');
   fs.mkdirSync(programsDir, { recursive: true });
   const shortcutPath = path.join(programsDir, `beautiCode ${NAMES[host]} (背景).lnk`);
+  // WScript shortcut persistence can reject Unicode filenames on an English Windows image.
+  // Use a private ASCII alias for COM reads/writes; the filesystem publishes the unchanged display name without overwrite.
+  const temporaryPath = path.join(programsDir, `.beauticode-${randomUUID()}.lnk`);
   const description = `beautiCode quick launch for ${host}`;
   const script = [
     "$ErrorActionPreference='Stop'",
     "$ProgressPreference='SilentlyContinue'",
-    "$shell=New-Object -ComObject WScript.Shell",
+    "[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)",
     `$shortcutPath=${psLiteral(shortcutPath)}`,
+    `$temporaryPath=${psLiteral(temporaryPath)}`,
     `$launcher=${psLiteral(launcher)}`,
     `$description=${psLiteral(description)}`,
     "$target=(Join-Path $env:WINDIR 'System32\\WindowsPowerShell\\v1.0\\powershell.exe')",
     "  $arguments='-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File " + '"' + "' + $launcher + '" + '"' + " --quick-launch'",
+    'try {',
+    "$shell=New-Object -ComObject WScript.Shell",
     "if(Test-Path -LiteralPath $shortcutPath){",
-    "  $existing=$shell.CreateShortcut($shortcutPath)",
+    "  [System.IO.File]::Copy($shortcutPath,$temporaryPath)",
+    "  $existing=$shell.CreateShortcut($temporaryPath)",
     "  if($existing.Description -ne $description -or $existing.Arguments -ne $arguments -or $existing.TargetPath -ine $target){throw 'shortcut-conflict'}",
     "  [Console]::Out.WriteLine('present')",
     '}else{',
-    "  $link=$shell.CreateShortcut($shortcutPath)",
+    "  $link=$shell.CreateShortcut($temporaryPath)",
     "  $link.TargetPath=$target",
     "  $link.Arguments=$arguments",
     "  $link.WorkingDirectory=(Split-Path -Parent $launcher)",
     "  $link.WindowStyle=7",
     "  $link.Description=$description",
     "  $link.Save()",
+    "  [System.IO.File]::Move($temporaryPath,$shortcutPath)",
     "  [Console]::Out.WriteLine('created')",
+    '}',
+    '} catch {',
+    "  [Console]::Error.WriteLine($_.Exception.Message)",
+    '  exit 1',
+    '} finally {',
+    "  [System.IO.File]::Delete($temporaryPath)",
     '}',
   ].join('\n');
   const result = (options.spawnSync || spawnSync)('powershell.exe', ['-NoProfile', '-NonInteractive', '-OutputFormat', 'Text', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], {
@@ -57,7 +72,12 @@ export function installHostQuickShortcut(host, options = {}) {
   });
   if (result.error || result.status !== 0) {
     const code = result.error?.code || (/shortcut-conflict/.test(String(result.stderr)) ? 'shortcut-conflict' : `exit-${result.status ?? 'unknown'}`);
-    throw Object.assign(new Error(`shortcut-create-failed: ${code}`), { code });
+    const detail = result.error ? '' : String(result.stderr || result.stdout || '')
+      .replaceAll(launcher, '[path]').replaceAll(shortcutPath, '[path]').replaceAll(temporaryPath, '[path]').replaceAll(programsDir, '[path]')
+      .replace(/(?:https?|file):\/\/[^\s"'<>]+/gi, '[url]')
+      .replace(/(?:[A-Za-z]:[\\/]|\\\\)[^"'<>\r\n]+/g, '[path]')
+      .replace(/[\x00-\x1f]+/g, ' ').trim().slice(0, 500);
+    throw Object.assign(new Error(`shortcut-create-failed: ${code}${detail ? `: ${detail}` : ''}`), { code });
   }
   const outcome = String(result.stdout).trim();
   if (outcome !== 'created' && outcome !== 'present') throw new Error('shortcut-result-invalid');
