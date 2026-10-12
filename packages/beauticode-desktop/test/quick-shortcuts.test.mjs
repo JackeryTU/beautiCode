@@ -15,7 +15,14 @@ test('quick shortcut survives an npm package move by pointing at the stable runt
   fs.mkdirSync(path.dirname(launcher), { recursive: true });
   fs.writeFileSync(launcher, 'exit 0\n');
   const programsDir = path.join(root, 'Programs');
-  const first = installHostQuickShortcut('cursor', { launcher, programsDir });
+  const first = installHostQuickShortcut('cursor', { launcher, programsDir,
+    spawnSync(...args) {
+      const result = spawnSync(...args);
+      // Keep native diagnostics in the isolated fixture so CI can distinguish COM failures from process capture failures.
+      assert.equal(result.status, 0, result.error?.message || result.stderr);
+      return result;
+    },
+  });
   assert.equal(first.outcome, 'created');
   assert.equal(fs.existsSync(first.path), true);
   assert.equal(installHostQuickShortcut('cursor', { launcher, programsDir }).outcome, 'present');
