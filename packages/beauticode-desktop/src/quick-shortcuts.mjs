@@ -30,6 +30,7 @@ export function installHostQuickShortcut(host, options = {}) {
   const description = `beautiCode quick launch for ${host}`;
   const script = [
     "$ErrorActionPreference='Stop'",
+    "$ProgressPreference='SilentlyContinue'",
     "$shell=New-Object -ComObject WScript.Shell",
     `$shortcutPath=${psLiteral(shortcutPath)}`,
     `$launcher=${psLiteral(launcher)}`,
@@ -51,10 +52,13 @@ export function installHostQuickShortcut(host, options = {}) {
     "  [Console]::Out.WriteLine('created')",
     '}',
   ].join('\n');
-  const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], {
-    encoding: 'utf8', windowsHide: true, timeout: 8_000, maxBuffer: 16 * 1024,
+  const result = (options.spawnSync || spawnSync)('powershell.exe', ['-NoProfile', '-NonInteractive', '-OutputFormat', 'Text', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], {
+    encoding: 'utf8', windowsHide: true, timeout: 8_000, maxBuffer: 64 * 1024,
   });
-  if (result.status !== 0) throw new Error(String(result.stderr || result.stdout || 'shortcut-create-failed').trim().slice(0, 200));
+  if (result.error || result.status !== 0) {
+    const code = result.error?.code || (/shortcut-conflict/.test(String(result.stderr)) ? 'shortcut-conflict' : `exit-${result.status ?? 'unknown'}`);
+    throw Object.assign(new Error(`shortcut-create-failed: ${code}`), { code });
+  }
   const outcome = String(result.stdout).trim();
   if (outcome !== 'created' && outcome !== 'present') throw new Error('shortcut-result-invalid');
   return { outcome, path: shortcutPath };

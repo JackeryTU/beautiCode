@@ -599,7 +599,8 @@ export class DshSession implements HostSession {
   }
 
   private async watchOnce(): Promise<void> {
-    if (this.closed || !this.host || this.watchTask) return;
+    // readActiveManifest can initialize activeDir. A tick during promotion must not recreate that rename target.
+    if (this.closed || !this.host || this.watchTask || this.userBusy) return;
     const task = (async () => {
       try {
         const [status, manifest] = await Promise.all([

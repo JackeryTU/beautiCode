@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { spawnSync } from 'node:child_process';
+import { installHostQuickShortcut } from '../src/quick-shortcuts.mjs';
 
 test('quick shortcut survives an npm package move by pointing at the stable runtime', { skip: process.platform !== 'win32' }, async (t) => {
   const { installHostQuickShortcut } = await import('../src/quick-shortcuts.mjs').catch(() => ({}));
@@ -17,4 +19,33 @@ test('quick shortcut survives an npm package move by pointing at the stable runt
   assert.equal(first.outcome, 'created');
   assert.equal(fs.existsSync(first.path), true);
   assert.equal(installHostQuickShortcut('cursor', { launcher, programsDir }).outcome, 'present');
+});
+
+test('shortcut process capture tolerates module progress without losing a successful outcome', { skip: process.platform !== 'win32' }, (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'beauticode-shortcut-output-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const launcher = path.join(root, 'launcher.ps1');
+  fs.writeFileSync(launcher, 'exit 0\n');
+  let calls = 0;
+  const result = installHostQuickShortcut('cursor', {
+    launcher, programsDir: path.join(root, 'Programs'),
+    spawnSync(_program, _args, options) {
+      calls++;
+      // Reproduce the size of PowerShell module-loading progress on a fresh hosted runner.
+      return spawnSync(process.execPath, ['--eval', "process.stderr.write('x'.repeat(48 * 1024)); process.stdout.write('created');"], options);
+    },
+  });
+  assert.equal(calls, 1);
+  assert.equal(result.outcome, 'created');
+});
+
+test('shortcut process errors report the actual failure code instead of CLIXML progress', { skip: process.platform !== 'win32' }, (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'beauticode-shortcut-error-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const launcher = path.join(root, 'launcher.ps1');
+  fs.writeFileSync(launcher, 'exit 0\n');
+  assert.throws(() => installHostQuickShortcut('cursor', {
+    launcher, programsDir: path.join(root, 'Programs'),
+    spawnSync: () => ({ status: null, error: Object.assign(new Error('capture failed'), { code: 'ENOBUFS' }), stderr: '#< CLIXML progress' }),
+  }), (error) => error.code === 'ENOBUFS' && error.message.includes('ENOBUFS') && !error.message.includes('CLIXML'));
 });
