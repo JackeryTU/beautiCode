@@ -17,13 +17,14 @@ const env = {
 };
 
 function fakeOptions(hostFiles, spawnSync) {
-  const normalized = new Set(hostFiles.map((file) => path.normalize(file)));
+  // This fixture models Windows install records even when the test runner itself is Linux.
+  const normalized = new Set(hostFiles.map((file) => path.win32.normalize(file)));
   return {
     home,
     runtimeRoot,
     env,
     platform: "win32",
-    exists: (file) => path.normalize(file).startsWith(path.normalize(runtimeRoot)) || normalized.has(path.normalize(file)),
+    exists: (file) => path.win32.normalize(file).startsWith(path.win32.normalize(runtimeRoot)) || normalized.has(path.win32.normalize(file)),
     probeAppxCodex: () => false,
     queryRegistered: () => [],
     verifyHostInstall: () => ({ ready: true, state: "guardian-ready" }),

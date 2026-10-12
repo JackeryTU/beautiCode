@@ -67,19 +67,32 @@ export function installHostQuickShortcut(host, options = {}) {
     "  [System.IO.File]::Delete($temporaryPath)",
     '}',
   ].join('\n');
-  const result = (options.spawnSync || spawnSync)('powershell.exe', ['-NoProfile', '-NonInteractive', '-OutputFormat', 'Text', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], {
-    encoding: 'utf8', windowsHide: true, timeout: 8_000, maxBuffer: 64 * 1024,
-  });
-  if (result.error || result.status !== 0) {
-    const code = result.error?.code || (/shortcut-conflict/.test(String(result.stderr)) ? 'shortcut-conflict' : `exit-${result.status ?? 'unknown'}`);
-    const detail = result.error ? '' : String(result.stderr || result.stdout || '')
-      .replaceAll(launcher, '[path]').replaceAll(shortcutPath, '[path]').replaceAll(temporaryPath, '[path]').replaceAll(programsDir, '[path]')
-      .replace(/(?:https?|file):\/\/[^\s"'<>]+/gi, '[url]')
-      .replace(/(?:[A-Za-z]:[\\/]|\\\\)[^"'<>\r\n]+/g, '[path]')
-      .replace(/[\x00-\x1f]+/g, ' ').trim().slice(0, 500);
-    throw Object.assign(new Error(`shortcut-create-failed: ${code}${detail ? `: ${detail}` : ''}`), { code });
+  let operationError;
+  try {
+    const result = (options.spawnSync || spawnSync)('powershell.exe', ['-NoProfile', '-NonInteractive', '-OutputFormat', 'Text', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], {
+      encoding: 'utf8', windowsHide: true, timeout: 8_000, maxBuffer: 64 * 1024,
+    });
+    if (result.error || result.status !== 0) {
+      const code = result.error?.code || (/shortcut-conflict/.test(String(result.stderr)) ? 'shortcut-conflict' : `exit-${result.status ?? 'unknown'}`);
+      const detail = result.error ? '' : String(result.stderr || result.stdout || '')
+        .replaceAll(launcher, '[path]').replaceAll(shortcutPath, '[path]').replaceAll(temporaryPath, '[path]').replaceAll(programsDir, '[path]')
+        .replace(/(?:https?|file):\/\/[^\s"'<>]+/gi, '[url]')
+        .replace(/(?:[A-Za-z]:[\\/]|\\\\)[^"'<>\r\n]+/g, '[path]')
+        .replace(/[\x00-\x1f]+/g, ' ').trim().slice(0, 500);
+      throw Object.assign(new Error(`shortcut-create-failed: ${code}${detail ? `: ${detail}` : ''}`), { code });
+    }
+    const outcome = String(result.stdout).trim();
+    if (outcome !== 'created' && outcome !== 'present') throw new Error('shortcut-result-invalid');
+    return { outcome, path: shortcutPath };
+  } catch (error) {
+    operationError = error;
+    throw error;
+  } finally {
+    try { fs.rmSync(temporaryPath, { force: true }); }
+    catch (error) {
+      const code = error.code || "unknown";
+      const detail = operationError ? `${operationError.message}; ` : "";
+      throw Object.assign(new Error(`${detail}shortcut-temp-cleanup-failed: ${code}`), { code });
+    }
   }
-  const outcome = String(result.stdout).trim();
-  if (outcome !== 'created' && outcome !== 'present') throw new Error('shortcut-result-invalid');
-  return { outcome, path: shortcutPath };
 }

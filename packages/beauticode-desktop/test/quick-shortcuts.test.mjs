@@ -102,3 +102,21 @@ function New-Object {
   assert.equal(result.outcome, 'created');
   assert.deepEqual(fs.readdirSync(programsDir), ['beautiCode Cursor (背景).lnk']);
 });
+
+test('parent cleans its private shortcut alias when the native process is terminated', { skip: process.platform !== 'win32' }, (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'beauticode-shortcut-timeout-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const launcher = path.join(root, 'launcher.ps1');
+  fs.writeFileSync(launcher, 'exit 0\n');
+  const programsDir = path.join(root, 'Programs');
+  assert.throws(() => installHostQuickShortcut('cursor', {
+    launcher, programsDir,
+    spawnSync(_program, args) {
+      const script = Buffer.from(args.at(-1), 'base64').toString('utf16le');
+      const temporary = script.match(/\$temporaryPath='([^']+)'/)[1];
+      fs.writeFileSync(temporary, 'unfinished owned shortcut');
+      return { status: null, error: Object.assign(new Error('timed out'), { code: 'ETIMEDOUT' }) };
+    },
+  }), (error) => error.code === 'ETIMEDOUT');
+  assert.deepEqual(fs.readdirSync(programsDir), []);
+});
