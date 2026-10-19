@@ -19,13 +19,30 @@ const galleryCss = atmosphere.match(css)[1];
 // The plugin page is a page, not a panel: it keeps the translucent surfaces
 // client.js publishes and lets the wallpaper read through, exactly like the
 // automation-tasks page. Legibility comes from a text halo plus one caption
-// tier instead of an opaque plate. Contrast is therefore a property of the
-// wallpaper, so the bars below are checked on a mid-tone background that
-// matches the case issue #92 reported (measured page background luminance
-// L≈0.097); extremes (pure white/black wallpaper) are out of scope by design.
+// tier instead of an opaque plate, so contrast is a property of the wallpaper
+// rather than of the component. Each tone therefore has its own applicable
+// range, and the two ranges mirror each other:
+//
+//   dark tone  (light text #f9fafb / #cfd3d6)  holds while the local background stays dark
+//   light tone (dark text  #0f1115 / #61666b)  holds while the local background stays light
+//
+// The bars are the reference page's own measured contrast (automation-tasks:
+// 5.31–5.61 for titles, 4.31–4.39 for secondary text). Each tone is checked on
+// the wallpaper the issue #92 report corresponds to for that tone, and the two
+// opposing extremes are asserted to FAIL: that keeps the accepted trade-off
+// visible in the suite instead of letting a bar pass vacuously.
 const TITLE_BAR = 5;
 const BODY_BAR = 4.2;
-const MID_TONE_WALLPAPER = "#555555";
+const TONE_CASES = [
+  // #555555 is L≈0.091, next to the L≈0.097 background measured in the report.
+  { tone: "dark", background: "#555555", range: "local background L ≲ 0.10" },
+  // Mirrored range for dark text on a light wallpaper.
+  { tone: "light", background: "#e8e8e8", range: "local background L ≳ 0.81" },
+];
+const OUT_OF_RANGE_CASES = [
+  { tone: "dark", background: "#ffffff", why: "light text on a white wallpaper" },
+  { tone: "light", background: "#000000", why: "dark text on a black wallpaper" },
+];
 
 async function fixture(t, { enabled = true, inject = true } = {}) {
   const { chromium } = await import(runtime);
@@ -127,16 +144,40 @@ browserTest("plugin page keeps the wallpaper and the text halo across themes, ph
     }
 });
 
-browserTest("transparent rows keep text above the contrast the reference page ships", async t => {
+browserTest("each tone keeps the reference page's contrast inside its own wallpaper range", async t => {
   const page = await fixture(t);
-  await page.locator("#wallpaper").evaluate((el, color) => { el.style.background = color; }, MID_TONE_WALLPAPER);
-  const colors = await page.locator("h1, .host-intro, h3, .host-count, .host-description")
-    .evaluateAll(els => els.map(el => getComputedStyle(el).color));
-  assert.ok(colors.length >= 5, "fixture exercises titles, intro, group headings, counts and descriptions");
-  for (const color of colors)
-    assert.ok(contrast(color, MID_TONE_WALLPAPER) >= BODY_BAR, `${color} on ${MID_TONE_WALLPAPER}`);
-  const [title] = await page.locator("h1").evaluateAll(els => els.map(el => getComputedStyle(el).color));
-  assert.ok(contrast(title, MID_TONE_WALLPAPER) >= TITLE_BAR, `${title} on ${MID_TONE_WALLPAPER}`);
+  const readColors = () => page.locator("h1, .host-intro, h3, .host-count, .host-description")
+    .evaluateAll(els => els.map(el => ({
+      tag: el.tagName.toLowerCase() + (el.className ? "." + String(el.className).split(" ")[0] : ""),
+      color: getComputedStyle(el).color,
+    })));
+  const paint = ({ tone, background }) => page.evaluate(({ tone, background }) => {
+    document.documentElement.dataset.bcResolvedTone = tone;
+    document.querySelector("#wallpaper").style.background = background;
+  }, { tone, background });
+
+  for (const { tone, background, range } of TONE_CASES) {
+    await paint({ tone, background });
+    const colors = await readColors();
+    assert.ok(colors.length >= 5, "fixture exercises titles, intro, group headings, counts and descriptions");
+    for (const { tag, color } of colors)
+      assert.ok(contrast(color, background) >= BODY_BAR,
+        `${tone} tone (${range}): ${tag} ${color} on ${background} = ${contrast(color, background).toFixed(2)}`);
+    const title = colors.find(({ tag }) => tag === "h1");
+    assert.ok(title, "the fixture must render a page title");
+    assert.ok(contrast(title.color, background) >= TITLE_BAR,
+      `${tone} tone (${range}): title ${title.color} on ${background} = ${contrast(title.color, background).toFixed(2)}`);
+  }
+
+  // The accepted trade-off, pinned: with a transparent page the opposite
+  // extreme of either tone is readable only through the wallpaper itself.
+  for (const { tone, background, why } of OUT_OF_RANGE_CASES) {
+    await paint({ tone, background });
+    const [title] = await page.locator("h1").evaluateAll(els => els.map(el => getComputedStyle(el).color));
+    const ratio = contrast(title, background);
+    assert.ok(ratio < BODY_BAR,
+      `${tone} tone: ${why} is outside the accepted range and must stay below the bar (${ratio.toFixed(2)} on ${background})`);
+  }
 });
 
 browserTest("wallpaper reads through the page instead of being occluded by a plate", async t => {
