@@ -95,6 +95,7 @@
     if (!webview.__beauticodeGuestTransparencyBound) {
       webview.__beauticodeGuestTransparencyBound = true;
       const refresh = () => installGuestTransparency(webview);
+      webview.__beauticodeGuestTransparencyRefresh = refresh;
       try { webview.addEventListener("dom-ready", refresh); } catch (_) {}
       try { webview.addEventListener("did-finish-load", refresh); } catch (_) {}
     }
@@ -115,6 +116,17 @@
             if (result && typeof result.catch === "function") {
               result.catch(() => {});
             }
+          } catch (_) {}
+          const refresh = webview.__beauticodeGuestTransparencyRefresh;
+          if (refresh) {
+            try { webview.removeEventListener("dom-ready", refresh); } catch (_) {}
+            try {
+              webview.removeEventListener("did-finish-load", refresh);
+            } catch (_) {}
+          }
+          try {
+            webview.__beauticodeGuestTransparencyBound = false;
+            delete webview.__beauticodeGuestTransparencyRefresh;
           } catch (_) {}
         });
     } catch (_) {}
