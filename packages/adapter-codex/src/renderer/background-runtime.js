@@ -86,8 +86,22 @@
     document.getElementById(${JSON.stringify(GUEST_STYLE_ID)})?.remove();
     return true;
   })()`;
+  const guestTransparencyAllowed = (webview) => {
+    try {
+      const src = webview.getAttribute("src") || "";
+      return !src.startsWith("codex-sandbox:");
+    } catch (_) {
+      return false;
+    }
+  };
   const installGuestTransparency = (webview) => {
-    if (!webview || typeof webview.executeJavaScript !== "function") return;
+    if (
+      !webview ||
+      !guestTransparencyAllowed(webview) ||
+      typeof webview.executeJavaScript !== "function"
+    ) {
+      return;
+    }
     try {
       const result = webview.executeJavaScript(guestExpression);
       if (result && typeof result.catch === "function") result.catch(() => {});
@@ -108,27 +122,28 @@
   };
   const clearGuestTransparency = () => {
     try {
-      document.querySelectorAll('webview:not([src^="codex-sandbox:"])')
-        .forEach((webview) => {
-          if (typeof webview.executeJavaScript !== "function") return;
+      document.querySelectorAll("webview").forEach((webview) => {
+        if (!webview.__beauticodeGuestTransparencyBound) return;
+        if (typeof webview.executeJavaScript === "function") {
           try {
             const result = webview.executeJavaScript(clearGuestExpression);
             if (result && typeof result.catch === "function") {
               result.catch(() => {});
             }
           } catch (_) {}
-          const refresh = webview.__beauticodeGuestTransparencyRefresh;
-          if (refresh) {
-            try { webview.removeEventListener("dom-ready", refresh); } catch (_) {}
-            try {
-              webview.removeEventListener("did-finish-load", refresh);
-            } catch (_) {}
-          }
+        }
+        const refresh = webview.__beauticodeGuestTransparencyRefresh;
+        if (refresh) {
+          try { webview.removeEventListener("dom-ready", refresh); } catch (_) {}
           try {
-            webview.__beauticodeGuestTransparencyBound = false;
-            delete webview.__beauticodeGuestTransparencyRefresh;
+            webview.removeEventListener("did-finish-load", refresh);
           } catch (_) {}
-        });
+        }
+        try {
+          webview.__beauticodeGuestTransparencyBound = false;
+          delete webview.__beauticodeGuestTransparencyRefresh;
+        } catch (_) {}
+      });
     } catch (_) {}
   };
 

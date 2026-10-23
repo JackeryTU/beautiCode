@@ -434,7 +434,7 @@ html[data-bc-active="true"]
 
 html[data-bc-active="true"] [data-overlay-owner]:is(
   .bg-surface, .bg-surface-secondary, .bg-surface-elevated,
-  .bg-surface-elevated-secondary) {
+  .bg-surface-elevated-secondary):not([role="tooltip"]) {
   background-color: rgba(253, 252, 254, 0.94) !important;
   background-image: none !important;
 }
