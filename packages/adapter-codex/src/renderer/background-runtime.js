@@ -53,6 +53,73 @@
   const root = document.documentElement;
   const previous = window.__BEAUTICODE_BG__;
 
+  // Full-page ChatGPT routes (Plugins, Skills, Library, Plans) live in an
+  // Electron <webview>. Host CSS cannot cross that document boundary, so clear
+  // the guest's opaque shell tokens from the host through executeJavaScript.
+  // Controls keep their own borders and foregrounds; only page-sized surfaces
+  // are made transparent so the full-window wallpaper remains the base layer.
+  const GUEST_STYLE_ID = "beauticode-guest-wallpaper-style";
+  const GUEST_CSS = `
+    html, body {
+      background: transparent !important;
+      background-color: transparent !important;
+      background-image: none !important;
+    }
+    body > #root,
+    body > #__next {
+      background-color: transparent !important;
+      background-image: none !important;
+    }
+  `;
+  const guestExpression = `(() => {
+    const id = ${JSON.stringify(GUEST_STYLE_ID)};
+    let style = document.getElementById(id);
+    if (!style) {
+      style = document.createElement("style");
+      style.id = id;
+      (document.head || document.documentElement).appendChild(style);
+    }
+    style.textContent = ${JSON.stringify(GUEST_CSS)};
+    return true;
+  })()`;
+  const clearGuestExpression = `(() => {
+    document.getElementById(${JSON.stringify(GUEST_STYLE_ID)})?.remove();
+    return true;
+  })()`;
+  const installGuestTransparency = (webview) => {
+    if (!webview || typeof webview.executeJavaScript !== "function") return;
+    try {
+      const result = webview.executeJavaScript(guestExpression);
+      if (result && typeof result.catch === "function") result.catch(() => {});
+    } catch (_) {}
+    if (!webview.__beauticodeGuestTransparencyBound) {
+      webview.__beauticodeGuestTransparencyBound = true;
+      const refresh = () => installGuestTransparency(webview);
+      try { webview.addEventListener("dom-ready", refresh); } catch (_) {}
+      try { webview.addEventListener("did-finish-load", refresh); } catch (_) {}
+    }
+  };
+  const syncGuestTransparency = () => {
+    try {
+      document.querySelectorAll('webview:not([src^="codex-sandbox:"])')
+        .forEach(installGuestTransparency);
+    } catch (_) {}
+  };
+  const clearGuestTransparency = () => {
+    try {
+      document.querySelectorAll('webview:not([src^="codex-sandbox:"])')
+        .forEach((webview) => {
+          if (typeof webview.executeJavaScript !== "function") return;
+          try {
+            const result = webview.executeJavaScript(clearGuestExpression);
+            if (result && typeof result.catch === "function") {
+              result.catch(() => {});
+            }
+          } catch (_) {}
+        });
+    } catch (_) {}
+  };
+
   // ---- Same-generation short-circuit (critical anti-flash) ----
   // The tray watch loop re-publishes the active payload every ~1s. Rebuilding
   // the stage on every poll creates stacked <video> nodes + poster flashes.
@@ -111,6 +178,7 @@
             }
           } catch (_) {}
         }
+        syncGuestTransparency();
         return { skipped: true, generation: gen, reason: "same-generation" };
       }
     } catch (_) {
@@ -1889,6 +1957,7 @@
       } catch (_) {}
       if (!handoff) {
         window.__BEAUTICODE_THEME__?.stop();
+        clearGuestTransparency();
         clearStage();
         root.removeAttribute("data-bc-active");
         root.removeAttribute("data-bc-media");
@@ -2005,6 +2074,7 @@
   };
 
   window.__BEAUTICODE_BG__ = api;
+  syncGuestTransparency();
   // Runtime.evaluate(awaitPromise) must wait until the stage exists.
   // Returning {installed} immediately used to let CDP setFileInputFiles
   // attach a blob, then this apply() rebuilt <video> and threw it away —
