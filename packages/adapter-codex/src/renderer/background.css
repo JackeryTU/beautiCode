@@ -420,3 +420,40 @@ html[data-bc-active="true"] body > #root main
   background-color: transparent !important;
   background-image: none !important;
 }
+
+/* Hover previews and other floating cards keep a light plate so the card
+   separates from the page behind it. Only overlay surfaces match, so a page
+   stays on the wallpaper after navigating there. */
+html[data-bc-active="true"]
+  :is([data-overlay-owner], [data-overlay-owner] *)
+  :is(.bg-surface, .bg-surface-secondary, .bg-surface-elevated,
+      .bg-surface-elevated-secondary):not([role="tooltip"], [role="tooltip"] *) {
+  background-color: rgba(253, 252, 254, 0.94) !important;
+  background-image: none !important;
+}
+
+html[data-bc-active="true"] [data-overlay-owner]:is(
+  .bg-surface, .bg-surface-secondary, .bg-surface-elevated,
+  .bg-surface-elevated-secondary) {
+  background-color: rgba(253, 252, 254, 0.94) !important;
+  background-image: none !important;
+}
+
+/* Project and page peeks: the card's inner wrapper paints a square white
+   plate over the rounded shell, so the preview reads as a hard rectangle.
+   Inherit the radius and clip the wrapper; a hairline ring keeps the rounded
+   silhouette visible on light wallpapers. */
+html[data-bc-active="true"]
+  [role="tooltip"][data-overlay-owner="slate-sidebar"] {
+  border-radius: 18px !important;
+  background-color: rgba(250, 249, 253, 0.97) !important;
+  overflow: hidden !important;
+  box-shadow:
+    0 18px 44px rgba(40, 22, 54, 0.22),
+    0 0 0 1px rgba(74, 35, 95, 0.1) !important;
+}
+
+html[data-bc-active="true"]
+  [role="tooltip"][data-overlay-owner="slate-sidebar"] > * {
+  border-radius: inherit !important;
+}
