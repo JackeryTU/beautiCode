@@ -60,13 +60,8 @@
   // are made transparent so the full-window wallpaper remains the base layer.
   const GUEST_STYLE_ID = "beauticode-guest-wallpaper-style";
   const GUEST_CSS = `
-    html, body {
+    html, body, body > #root, body > #__next {
       background: transparent !important;
-      background-color: transparent !important;
-      background-image: none !important;
-    }
-    body > #root,
-    body > #__next {
       background-color: transparent !important;
       background-image: none !important;
     }
@@ -80,10 +75,57 @@
       (document.head || document.documentElement).appendChild(style);
     }
     style.textContent = ${JSON.stringify(GUEST_CSS)};
+    const ATTR = "data-beauticode-guest-cleared";
+    const paint = () => {
+      if (!document.body) return;
+      const vw = window.innerWidth || 1;
+      const vh = window.innerHeight || 1;
+      const visit = (el, depth) => {
+        if (!(el instanceof HTMLElement) || depth > 6) return;
+        if (!el.hasAttribute(ATTR)) {
+          const rect = el.getBoundingClientRect();
+          if (rect.width >= vw * 0.9 && rect.height >= vh * 0.9) {
+            const bg = getComputedStyle(el).backgroundColor;
+            if (bg && bg !== "transparent" && bg !== "rgba(0, 0, 0, 0)") {
+              el.setAttribute(ATTR, el.style.backgroundColor || "");
+              el.style.setProperty("background-color", "transparent", "important");
+            }
+          }
+        }
+        for (const child of el.children) visit(child, depth + 1);
+      };
+      for (const child of document.body.children) visit(child, 0);
+    };
+    paint();
+    if (!window.__beauticodeGuestObserver) {
+      const observer = new MutationObserver(() => {
+        if (window.__beauticodeGuestPaintTimer) return;
+        window.__beauticodeGuestPaintTimer = setTimeout(() => {
+          window.__beauticodeGuestPaintTimer = 0;
+          try { paint(); } catch (_) {}
+        }, 300);
+      });
+      observer.observe(document.documentElement, { childList: true, subtree: true });
+      window.__beauticodeGuestObserver = observer;
+    }
     return true;
   })()`;
   const clearGuestExpression = `(() => {
     document.getElementById(${JSON.stringify(GUEST_STYLE_ID)})?.remove();
+    try {
+      window.__beauticodeGuestObserver?.disconnect();
+      window.__beauticodeGuestObserver = null;
+      if (window.__beauticodeGuestPaintTimer) {
+        clearTimeout(window.__beauticodeGuestPaintTimer);
+        window.__beauticodeGuestPaintTimer = 0;
+      }
+    } catch (_) {}
+    document.querySelectorAll("[data-beauticode-guest-cleared]").forEach((el) => {
+      const prev = el.getAttribute("data-beauticode-guest-cleared");
+      el.removeAttribute("data-beauticode-guest-cleared");
+      if (prev) el.style.backgroundColor = prev;
+      else el.style.removeProperty("background-color");
+    });
     return true;
   })()`;
   const guestTransparencyAllowed = (webview) => {
@@ -146,6 +188,42 @@
       });
     } catch (_) {}
   };
+  const isBackgroundActive = () =>
+    root.getAttribute("data-bc-active") === "true";
+  let guestSyncTimer = null;
+  const scheduleGuestSync = () => {
+    if (!isBackgroundActive() || guestSyncTimer) return;
+    guestSyncTimer = setTimeout(() => {
+      guestSyncTimer = null;
+      if (isBackgroundActive()) syncGuestTransparency();
+    }, 200);
+  };
+  try {
+    new MutationObserver((records) => {
+      for (const record of records) {
+        if (
+          record.type === "attributes" &&
+          record.target instanceof Element &&
+          record.target.tagName === "WEBVIEW"
+        ) {
+          scheduleGuestSync();
+          return;
+        }
+        for (const node of record.addedNodes) {
+          if (!(node instanceof Element)) continue;
+          if (node.tagName === "WEBVIEW" || node.querySelector("webview")) {
+            scheduleGuestSync();
+            return;
+          }
+        }
+      }
+    }).observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["src"],
+    });
+  } catch (_) {}
 
   // ---- Same-generation short-circuit (critical anti-flash) ----
   // The tray watch loop re-publishes the active payload every ~1s. Rebuilding
@@ -205,7 +283,7 @@
             }
           } catch (_) {}
         }
-        syncGuestTransparency();
+        if (isBackgroundActive()) syncGuestTransparency();
         return { skipped: true, generation: gen, reason: "same-generation" };
       }
     } catch (_) {
@@ -1817,6 +1895,7 @@
       teardownImageBlob();
       releaseHandoff();
       clearStage();
+      clearGuestTransparency();
       resolvedPoster = null;
       stopWorkingWatch();
       setAttrs();
@@ -2101,14 +2180,17 @@
   };
 
   window.__BEAUTICODE_BG__ = api;
-  syncGuestTransparency();
   // Runtime.evaluate(awaitPromise) must wait until the stage exists.
   // Returning {installed} immediately used to let CDP setFileInputFiles
   // attach a blob, then this apply() rebuilt <video> and threw it away —
   // every Codex video import then sat in verify until the console timed out.
   return Promise.resolve()
     .then(apply)
-    .then(() => ({ installed: true, generation: gen }))
+    .then(() => {
+      if (isBackgroundActive()) syncGuestTransparency();
+      else clearGuestTransparency();
+      return { installed: true, generation: gen };
+    })
     .catch((err) => {
       if (isCurrent()) {
         imageFailed = true;
