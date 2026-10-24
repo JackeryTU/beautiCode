@@ -198,8 +198,9 @@
       if (isBackgroundActive()) syncGuestTransparency();
     }, 200);
   };
+  let guestObserver = null;
   try {
-    new MutationObserver((records) => {
+    guestObserver = new MutationObserver((records) => {
       for (const record of records) {
         if (
           record.type === "attributes" &&
@@ -217,13 +218,24 @@
           }
         }
       }
-    }).observe(document.documentElement, {
+    });
+    guestObserver.observe(document.documentElement, {
       childList: true,
       subtree: true,
       attributes: true,
       attributeFilter: ["src"],
     });
   } catch (_) {}
+  const stopGuestWatchers = () => {
+    try {
+      guestObserver?.disconnect();
+    } catch (_) {}
+    guestObserver = null;
+    if (guestSyncTimer) {
+      clearTimeout(guestSyncTimer);
+      guestSyncTimer = null;
+    }
+  };
 
   // ---- Same-generation short-circuit (critical anti-flash) ----
   // The tray watch loop re-publishes the active payload every ~1s. Rebuilding
@@ -962,6 +974,7 @@
   };
 
   const setAttrs = () => {
+    const wasActive = root.getAttribute("data-bc-active") === "true";
     const handoffReady =
       videoEnabled &&
       !videoFailed &&
@@ -989,9 +1002,11 @@
       root.removeAttribute("data-bc-tone");
       fishMode = false;
       stopWorkingWatch();
+      if (wasActive) clearGuestTransparency();
       return;
     }
     root.setAttribute("data-bc-active", "true");
+    if (!wasActive) syncGuestTransparency();
     // Keep media=video during handoff so CSS does not snap back to image-only
     // while the previous frame is still covering the stage.
     const media =
@@ -2037,6 +2052,7 @@
       // Always stop working-state watchers; the next generation starts its own.
       // Do not leave MutationObservers / intervals from a superseded runtime.
       stopWorkingWatch();
+      stopGuestWatchers();
       const handoff = Boolean(opts && opts.handoff);
       if (!handoff) {
         teardownVideo();
